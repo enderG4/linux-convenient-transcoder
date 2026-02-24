@@ -82,3 +82,18 @@ class WorkItem:
     status: WorkerStatus = WorkerStatus.PENDING
     progress: float = 0.0          # 0.0 – 100.0
     error_message: str = ""
+
+class CompressionType(Enum):
+    CRF = auto()  # Use a slider (0-51)
+    PROFILE = auto()  # Use a dropdown (proxy, lt, hq, etc.)
+    NONE = auto()  # Hide compression controls
+
+@dataclass
+class CodecConfig:
+    """Defines how the UI should present and handle a specific video codec."""
+    display_name: str
+    ffmpeg_codec: str
+    default_format: str
+    allowed_formats: list[str]
+    compression_type: CompressionType
+    profiles: list[str] = field(default_factory=list)  # Populated if type is PROFILE

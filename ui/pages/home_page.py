@@ -1,85 +1,31 @@
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QPushButton, QProgressBar, QScrollArea, QSizePolicy, QFrame
+    QPushButton, QProgressBar, QScrollArea, QSizePolicy, QFrame, QDialog
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
 
-
-# ── Reusable job card ─────────────────────────────────────────────────────────
-
-class JobCard(QFrame):
-    """A single job card displayed in the job list."""
-
-    def __init__(self, job_number: int, parent=None):
-        super().__init__(parent)
-        self.setObjectName("JobCard")
-        self.setStyleSheet("""
-            QFrame#JobCard {
-                background-color: #2a2a2a;
-                border: 1px solid #3a3a3a;
-                border-radius: 8px;
-            }
-            QFrame#JobCard:hover {
-                border: 1px solid #558B6E;
-            }
-        """)
-        self.setFixedHeight(90)
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-
-        root = QVBoxLayout(self)
-        root.setContentsMargins(14, 10, 14, 10)
-        root.setSpacing(6)
-
-        # Top row: label + status badge
-        top_row = QHBoxLayout()
-        top_row.setSpacing(8)
-
-        self.title_label = QLabel(f"Job {job_number}")
-        self.title_label.setStyleSheet("color: #e0e0e0; font-size: 11pt; font-weight: 600; background: transparent;")
-        top_row.addWidget(self.title_label)
-
-        self.status_badge = QLabel("Queued")
-        self.status_badge.setStyleSheet("""
-            color: #aaaaaa;
-            background-color: #3a3a3a;
-            border-radius: 4px;
-            padding: 1px 6px;
-            font-size: 8pt;
-        """)
-        self.status_badge.setFixedHeight(18)
-        top_row.addWidget(self.status_badge)
-        top_row.addStretch()
-
-        root.addLayout(top_row)
-
-        # Progress bar
-        self.progress = QProgressBar()
-        self.progress.setValue(20)
-        self.progress.setFixedHeight(6)
-        self.progress.setTextVisible(False)
-        self.progress.setStyleSheet("""
-            QProgressBar {
-                background-color: #3a3a3a;
-                border-radius: 3px;
-            }
-            QProgressBar::chunk {
-                background-color: #558B6E;
-                border-radius: 3px;
-            }
-        """)
-        root.addWidget(self.progress)
-
+from core.models import TranscodeJob
+from ui.dialogs.add_job import AddJobDialog
+from core.overseer import JobOverseer
+from ui.pages._job_card import JobCard
 
 # ── Home page ─────────────────────────────────────────────────────────────────
 
 class HomePage(QWidget):
     """Main job-list page."""
 
-    def __init__(self, switch_callback, parent=None):
+    def __init__(self, switch_callback, overseer: JobOverseer, parent=None):
         super().__init__(parent)
         self.switch_callback = switch_callback
-        self._jobs: list[JobCard] = []
+        self.overseer = overseer # Store reference to the central overseer
+        self._job_cards = {}     # Map job name -> JobCard widget
+        self._jobs = []          # Store references to created JobCards
+
+        # Connect to overseer signals
+        self.overseer.job_status_changed.connect(self._on_job_status_changed)
+        self.overseer.work_item_progress.connect(self._on_work_item_progress)
+        self.overseer.work_item_status_changed.connect(self._on_work_item_status_changed)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -170,16 +116,33 @@ class HomePage(QWidget):
     # ── Private helpers ───────────────────────────────────────────────────────
 
     def _add_job(self):
-        # Hide empty-state placeholder on first card
+        """Triggered by the '+ Add Job' button."""
+        dialog = AddJobDialog(self)
+
+        # Execute dialog modally
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            # 1. Get the compiled job model
+            new_job = dialog.get_transcode_job()
+
+            # 2. Hand it off to the backend overseer
+            self.overseer.add_job(new_job)
+
+            # 3. Update the UI
+            self._hide_empty_state()
+
+            # Create and add the card
+            card = JobCard(new_job)
+            self._jobs_layout.addWidget(card)
+            self._jobs.append(card)
+
+    def _hide_empty_state(self):
+        """Helper to clear out the initial placeholder text."""
         if not self._jobs:
-            self._jobs_layout.removeWidget(self._empty_label)
             self._empty_label.hide()
-            # Remove the stretch spacers too
+            self._jobs_layout.removeWidget(self._empty_label)
+            # Remove the stretch spacers
             for i in reversed(range(self._jobs_layout.count())):
                 item = self._jobs_layout.itemAt(i)
                 if item and item.spacerItem():
                     self._jobs_layout.removeItem(item)
 
-        card = JobCard(len(self._jobs) + 1)
-        self._jobs_layout.addWidget(card)
-        self._jobs.append(card)

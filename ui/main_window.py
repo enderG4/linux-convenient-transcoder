@@ -4,6 +4,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 
+from core import JobOverseer
 from ui.pages import HomePage, SettingsPage
 
 
@@ -44,6 +45,9 @@ class MainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
+
+        self.overseer = JobOverseer()
+
         self.setWindowTitle("Auto-Transcoder")
         self.resize(1000, 620)
         self.setMinimumSize(700, 400)
@@ -58,7 +62,7 @@ class MainWindow(QMainWindow):
 
         # Page stack (main content)
         self._stack = QStackedWidget()
-        self._home_page = HomePage(self._switch_page)
+        self._home_page = HomePage(self._switch_page, self.overseer)
         self._settings_page = SettingsPage(self._switch_page)
         self._stack.addWidget(self._home_page)
         self._stack.addWidget(self._settings_page)
