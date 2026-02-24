@@ -2,7 +2,6 @@ from PySide6.QtWidgets import (
     QFrame, QVBoxLayout, QSizePolicy, QLabel, QHBoxLayout,
     QProgressBar, QWidget
 )
-from PySide6.QtCore import Qt, pyqtSignal
 from PySide6.QtGui import QColor
 
 from core import TranscodeJob

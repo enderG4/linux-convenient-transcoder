@@ -1,11 +1,9 @@
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QPushButton, QProgressBar, QScrollArea, QSizePolicy, QFrame, QDialog
+    QPushButton, QScrollArea, QFrame, QDialog
 )
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QFont
 
-from core.models import TranscodeJob
 from ui.dialogs.add_job import AddJobDialog
 from core.overseer import JobOverseer
 from ui.pages._job_card import JobCard
@@ -45,7 +43,7 @@ class HomePage(QWidget):
 
         self.add_job_btn = QPushButton("＋  Add Job")
         self.add_job_btn.setFixedHeight(32)
-        self.add_job_btn.setCursor(Qt.PointingHandCursor)
+        self.add_job_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.add_job_btn.setStyleSheet("""
             QPushButton {
                 background-color: #558B6E;
@@ -64,7 +62,7 @@ class HomePage(QWidget):
 
         self.settings_btn = QPushButton("⚙")
         self.settings_btn.setFixedSize(32, 32)
-        self.settings_btn.setCursor(Qt.PointingHandCursor)
+        self.settings_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.settings_btn.setStyleSheet("""
             QPushButton {
                 background-color: transparent;
@@ -83,7 +81,7 @@ class HomePage(QWidget):
         # ── Scroll area ───────────────────────────────────────────────────────
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
         scroll.setStyleSheet("background-color: #121212;")
         root.addWidget(scroll)
 
@@ -99,7 +97,7 @@ class HomePage(QWidget):
         self._jobs_layout = QVBoxLayout(self._jobs_column)
         self._jobs_layout.setSpacing(10)
         self._jobs_layout.setContentsMargins(0, 0, 0, 0)
-        self._jobs_layout.setAlignment(Qt.AlignTop)
+        self._jobs_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         canvas_layout.addStretch(1)
         canvas_layout.addWidget(self._jobs_column, 8)
@@ -107,12 +105,11 @@ class HomePage(QWidget):
 
         # ── Empty-state label ─────────────────────────────────────────────────
         self._empty_label = QLabel("No jobs yet.\nClick  ＋ Add Job  to get started.")
-        self._empty_label.setAlignment(Qt.AlignCenter)
+        self._empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._empty_label.setStyleSheet("color: #555; font-size: 11pt;")
         self._jobs_layout.addStretch()
         self._jobs_layout.addWidget(self._empty_label)
         self._jobs_layout.addStretch()
-
     # ── Private helpers ───────────────────────────────────────────────────────
 
     def _add_job(self):
@@ -134,6 +131,7 @@ class HomePage(QWidget):
             card = JobCard(new_job)
             self._jobs_layout.addWidget(card)
             self._jobs.append(card)
+            self._job_cards[new_job.name] = card
 
     def _hide_empty_state(self):
         """Helper to clear out the initial placeholder text."""
@@ -145,4 +143,24 @@ class HomePage(QWidget):
                 item = self._jobs_layout.itemAt(i)
                 if item and item.spacerItem():
                     self._jobs_layout.removeItem(item)
+
+    # ── Event handlers for overseer signals ────────────────────────────────────
+
+    def _on_job_status_changed(self, job_name: str, new_status):
+        """Triggered when a job's status changes in the overseer."""
+        if job_name in self._job_cards:
+            card = self._job_cards[job_name]
+            card.update_status(new_status)
+
+    def _on_work_item_progress(self, job_name: str, input_file, progress: float):
+        """Triggered when a work item reports progress."""
+        if job_name in self._job_cards:
+            card = self._job_cards[job_name]
+            card.update_work_item_progress(input_file, progress)
+
+    def _on_work_item_status_changed(self, job_name: str, input_file, status):
+        """Triggered when a work item's status changes."""
+        if job_name in self._job_cards:
+            card = self._job_cards[job_name]
+            card.update_work_item_status(input_file, status)
 
