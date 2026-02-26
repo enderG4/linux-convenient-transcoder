@@ -31,7 +31,8 @@ CODEC_PRESETS: list[CodecConfig] = [
         default_format=".mxf",
         allowed_formats=[".mxf", ".mov"],
         compression_type=CompressionType.PROFILE,
-        profiles=["lb", "sq", "hq", "hqx", "444"],
+        # ffmpeg requires the dnxhr_ prefix for -profile:v
+        profiles=["dnxhr_lb", "dnxhr_sq", "dnxhr_hq", "dnxhr_hqx", "dnxhr_444"],
     ),
     CodecConfig(
         display_name="Copy (Remux)",

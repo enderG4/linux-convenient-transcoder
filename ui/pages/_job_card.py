@@ -74,6 +74,7 @@ class JobCard(QFrame):
     card_selected    = Signal(object)
     run_requested    = Signal(str)
     stop_requested   = Signal(str)
+    edit_requested   = Signal(str)
     delete_requested = Signal(str)
 
     _STYLE = """
@@ -193,14 +194,17 @@ class JobCard(QFrame):
 
         self._run_btn    = _action_button("▶  Run Now", "#27ae60", "#2ecc71")
         self._stop_btn   = _action_button("■  Stop",    "#c0392b", "#e74c3c")
+        self._edit_btn   = _action_button("✎  Edit",    "#2d6a9f", "#3a85c7")
         self._delete_btn = _action_button("🗑  Delete",  "#444444", "#666666")
 
         self._run_btn.clicked.connect(   lambda: self.run_requested.emit(self.job.name))
         self._stop_btn.clicked.connect(  lambda: self.stop_requested.emit(self.job.name))
+        self._edit_btn.clicked.connect(  lambda: self.edit_requested.emit(self.job.name))
         self._delete_btn.clicked.connect(lambda: self.delete_requested.emit(self.job.name))
 
         btn_row.addWidget(self._run_btn)
         btn_row.addWidget(self._stop_btn)
+        btn_row.addWidget(self._edit_btn)
         btn_row.addStretch()
         btn_row.addWidget(self._delete_btn)
 
@@ -229,6 +233,15 @@ class JobCard(QFrame):
         self._apply_style(selected=False)
 
     # ── Status / progress (called by HomePage) ────────────────────────────────
+
+    def refresh_display(self):
+        """Refresh title and details labels after the job data has been updated."""
+        self.title_label.setText(self.job.name)
+        codec_name = self.job.extra_flags[1] if len(self.job.extra_flags) > 1 else "Unknown"
+        self.details_label.setText(
+            f"{codec_name}  •  {self.job.output_extension}  •  "
+            f"Input: {self.job.input_folder.name}  →  Output: {self.job.output_folder.name}"
+        )
 
     def update_status(self, new_status: JobStatus):
         self.job.status = new_status

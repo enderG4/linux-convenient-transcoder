@@ -144,6 +144,7 @@ class HomePage(QWidget):
         card.card_selected.connect(self._on_card_selected)
         card.run_requested.connect(self._on_run_requested)
         card.stop_requested.connect(self._on_stop_requested)
+        card.edit_requested.connect(self._on_edit_requested)
         card.delete_requested.connect(self._on_delete_requested)
         return card
 
@@ -183,6 +184,34 @@ class HomePage(QWidget):
 
     def _on_stop_requested(self, job_name: str):
         self.overseer.stop_job(job_name)
+
+    def _on_edit_requested(self, job_name: str):
+        card = self._job_cards.get(job_name)
+        if not card:
+            return
+
+        # Stop any active workers before editing
+        self.overseer.stop_job(job_name)
+
+        dialog = AddJobDialog(self, title="Edit Job")
+        dialog.populate_from_job(card.job)
+
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        updated_job = dialog.get_transcode_job()
+
+        # Swap in the overseer — remove old name, add updated
+        self.overseer.remove_job(job_name)
+        self.overseer.add_job(updated_job)
+
+        # Update the card dict (name may have changed)
+        del self._job_cards[job_name]
+        card.job = updated_job
+        card.refresh_display()
+        self._job_cards[updated_job.name] = card
+
+        self._save_config()
 
     def _on_delete_requested(self, job_name: str):
         reply = QMessageBox.question(
