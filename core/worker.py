@@ -15,6 +15,7 @@ finished()                emitted when the process exits (success or failure)
 from __future__ import annotations
 
 import subprocess
+import threading
 from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal
@@ -26,6 +27,7 @@ from core.probe import get_duration
 
 class TranscodeWorker(QThread):
 
+    duration_known   = Signal(float)   # emitted once, right after probing
     progress_changed = Signal(float)
     status_changed   = Signal(object)
     error_occurred   = Signal(str)
@@ -49,13 +51,14 @@ class TranscodeWorker(QThread):
             print(f"[WORKER] Probing duration of '{self._item.input_file}'")
             duration = get_duration(self._item.input_file)
             print(f"[WORKER] Duration = {duration:.2f}s")
+            self.duration_known.emit(duration)
 
             cmd = build_transcode_command(
                 self._job,
                 self._item.input_file,
                 self._item.output_file,
             )
-            print(f"[WORKER] Command: {' '.join(cmd)}")
+            print(f"[WORKER] Command:\n  {' '.join(cmd)}")
 
             self._run_ffmpeg(cmd, duration)
 
@@ -75,41 +78,58 @@ class TranscodeWorker(QThread):
         print(f"[WORKER] cancel() called for '{self._item.input_file.name}'")
         if self._process and self._process.poll() is None:
             self._process.terminate()
-            print(f"[WORKER] Process terminated")
+            print("[WORKER] Process terminated")
         else:
-            print(f"[WORKER] cancel() — no running process to terminate")
+            print("[WORKER] cancel() — no running process to terminate")
 
     # ── Internal ──────────────────────────────────────────────────────────────
 
     def _run_ffmpeg(self, cmd: list[str], duration: float):
-        print(f"[WORKER] Launching subprocess...")
+        print("[WORKER] Launching subprocess...")
         self._process = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,   # capture stderr so we can log errors
+            stderr=subprocess.PIPE,
             text=True,
         )
         print(f"[WORKER] PID = {self._process.pid}")
 
+        # ── Drain stderr in a background thread to prevent pipe deadlock ──────
+        # ffmpeg writes encoding info to stderr. If we only read stdout, the
+        # stderr pipe buffer fills up (~64 KB), ffmpeg blocks waiting for it to
+        # be consumed, stdout stalls, and this loop hangs indefinitely.
+        stderr_lines: list[str] = []
+
+        def _drain_stderr():
+            for line in self._process.stderr:
+                stripped = line.rstrip()
+                if stripped:
+                    stderr_lines.append(stripped)
+
+        stderr_thread = threading.Thread(target=_drain_stderr, daemon=True)
+        stderr_thread.start()
+
+        # ── Read progress from stdout ─────────────────────────────────────────
         progress_line_count = 0
         for line in self._process.stdout:
             line = line.strip()
             if line:
-                print(f"[WORKER] ffmpeg stdout: {line}")
+                print(f"[WORKER] stdout: {line}")
             pct = _parse_progress_line(line, duration)
             if pct is not None:
                 progress_line_count += 1
                 self._item.progress = pct
                 self.progress_changed.emit(pct)
 
-        # Drain stderr so the process doesn't deadlock and we can log it
-        stderr_output = self._process.stderr.read()
-        if stderr_output.strip():
-            print(f"[WORKER] ffmpeg stderr:\n{stderr_output.strip()}")
-
+        stderr_thread.join()
         self._process.wait()
+
         print(f"[WORKER] ffmpeg exited with code {self._process.returncode} "
-              f"({progress_line_count} progress lines seen)")
+              f"({progress_line_count} progress lines emitted)")
+
+        if stderr_lines:
+            print(f"[WORKER] ffmpeg stderr ({len(stderr_lines)} lines):\n"
+                  + "\n".join(f"  {l}" for l in stderr_lines))
 
         if self._process.returncode not in (0, 255):
             raise RuntimeError(
@@ -136,10 +156,11 @@ def _parse_progress_line(line: str, duration: float) -> float | None:
     seconds  = _hhmmss_to_seconds(time_str)
 
     if duration <= 0:
-        print(f"[WORKER] Warning: duration is 0, cannot compute progress")
+        print("[WORKER] Warning: duration is 0, cannot compute progress")
         return None
 
-    return min(seconds / duration * 100.0, 100.0)
+    pct = min(seconds / duration * 100.0, 100.0)
+    return pct
 
 
 def _hhmmss_to_seconds(time_str: str) -> float:

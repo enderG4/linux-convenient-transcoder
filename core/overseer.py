@@ -18,6 +18,7 @@ from core.worker import TranscodeWorker
 class JobOverseer(QObject):
 
     job_status_changed       = Signal(str, object)
+    work_item_duration       = Signal(str, object, float)   # (job_name, Path, seconds)
     work_item_progress       = Signal(str, object, float)
     work_item_status_changed = Signal(str, object, object)
     overseer_error           = Signal(str)
@@ -125,6 +126,9 @@ class JobOverseer(QObject):
         item   = WorkItem(input_file=input_file, output_file=output_file, job_name=job.name)
         worker = TranscodeWorker(job, item, parent=self)
 
+        worker.duration_known.connect(
+            lambda secs, f=input_file, n=job.name: self.work_item_duration.emit(n, f, secs)
+        )
         worker.progress_changed.connect(
             lambda pct, f=input_file, n=job.name: self.work_item_progress.emit(n, f, pct)
         )

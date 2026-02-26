@@ -17,12 +17,12 @@ class StatusBadge(QLabel):
 
     def set_status(self, status: JobStatus):
         status_map = {
-            JobStatus.IDLE:     ("Idle",       "#666666"),
-            JobStatus.SCANNING: ("Scanning…",  "#3d7ec9"),
-            JobStatus.QUEUED:   ("Queued",     "#f39c12"),
-            JobStatus.RUNNING:  ("Running",    "#27ae60"),
-            JobStatus.DONE:     ("Done",       "#558B6E"),
-            JobStatus.ERROR:    ("Error",      "#e74c3c"),
+            JobStatus.IDLE:     ("Idle",      "#666666"),
+            JobStatus.SCANNING: ("Scanning…", "#3d7ec9"),
+            JobStatus.QUEUED:   ("Queued",    "#f39c12"),
+            JobStatus.RUNNING:  ("Running",   "#27ae60"),
+            JobStatus.DONE:     ("Done",      "#558B6E"),
+            JobStatus.ERROR:    ("Error",     "#e74c3c"),
         }
         text, color = status_map.get(status, ("Unknown", "#888888"))
         self.setText(text)
@@ -39,7 +39,6 @@ class StatusBadge(QLabel):
 
 
 def _action_button(label: str, color: str, hover: str) -> QPushButton:
-    """Factory for the small action-bar buttons."""
     btn = QPushButton(label)
     btn.setFixedHeight(28)
     btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -61,27 +60,23 @@ def _action_button(label: str, color: str, hover: str) -> QPushButton:
 
 class JobCard(QFrame):
     """
-    Clickable job card.
-
-    Clicking anywhere on the card toggles a compact action bar that
-    exposes Run / Stop / Delete buttons.
+    Clickable job card. Clicking toggles a compact action bar with
+    Run / Stop / Delete buttons.
 
     Signals
     -------
-    card_selected(JobCard)   – emitted when this card is clicked so the
-                               home page can collapse other cards
-    run_requested(str)       – job name
-    stop_requested(str)      – job name
-    delete_requested(str)    – job name
+    card_selected(JobCard)
+    run_requested(str)
+    stop_requested(str)
+    delete_requested(str)
     """
 
-    card_selected    = Signal(object)   # passes self
+    card_selected    = Signal(object)
     run_requested    = Signal(str)
     stop_requested   = Signal(str)
     delete_requested = Signal(str)
 
-    # ── base / selected border colours ────────────────────────────────────────
-    _STYLE_BASE = """
+    _STYLE = """
         QFrame#JobCard {{
             background-color: #2a2a2a;
             border: 1px solid {border};
@@ -100,13 +95,12 @@ class JobCard(QFrame):
         self._apply_style(selected=False)
         self._setup_ui()
 
-    # ── Style helpers ─────────────────────────────────────────────────────────
+    # ── Style ─────────────────────────────────────────────────────────────────
 
     def _apply_style(self, selected: bool):
-        border = "#558B6E" if selected else "#3a3a3a"
-        self.setStyleSheet(self._STYLE_BASE.format(border=border))
+        self.setStyleSheet(self._STYLE.format(border="#558B6E" if selected else "#3a3a3a"))
 
-    # ── UI construction ───────────────────────────────────────────────────────
+    # ── UI ────────────────────────────────────────────────────────────────────
 
     def _setup_ui(self):
         root = QVBoxLayout(self)
@@ -175,7 +169,7 @@ class JobCard(QFrame):
         self.error_label.setWordWrap(True)
         root.addWidget(self.error_label)
 
-        # ── Action bar (hidden until card is clicked) ─────────────────────────
+        # ── Action bar (shown on click) ───────────────────────────────────────
         self._action_bar = self._build_action_bar()
         self._action_bar.setVisible(False)
         root.addWidget(self._action_bar)
@@ -183,11 +177,8 @@ class JobCard(QFrame):
         self.setMinimumHeight(90)
 
     def _build_action_bar(self) -> QWidget:
-        """Create the Run / Stop / Delete row."""
         bar = QWidget()
         bar.setStyleSheet("background: transparent;")
-
-        # Thin top separator
         layout = QVBoxLayout(bar)
         layout.setContentsMargins(0, 4, 0, 0)
         layout.setSpacing(6)
@@ -200,9 +191,9 @@ class JobCard(QFrame):
         btn_row = QHBoxLayout()
         btn_row.setSpacing(8)
 
-        self._run_btn    = _action_button("▶  Run Now",  "#27ae60", "#2ecc71")
-        self._stop_btn   = _action_button("■  Stop",     "#c0392b", "#e74c3c")
-        self._delete_btn = _action_button("🗑  Delete",   "#444444", "#666666")
+        self._run_btn    = _action_button("▶  Run Now", "#27ae60", "#2ecc71")
+        self._stop_btn   = _action_button("■  Stop",    "#c0392b", "#e74c3c")
+        self._delete_btn = _action_button("🗑  Delete",  "#444444", "#666666")
 
         self._run_btn.clicked.connect(   lambda: self.run_requested.emit(self.job.name))
         self._stop_btn.clicked.connect(  lambda: self.stop_requested.emit(self.job.name))
@@ -216,15 +207,14 @@ class JobCard(QFrame):
         layout.addLayout(btn_row)
         return bar
 
-    # ── Click handling ────────────────────────────────────────────────────────
+    # ── Click ─────────────────────────────────────────────────────────────────
 
     def mousePressEvent(self, event):
-        """Toggle the action bar on left-click."""
         if event.button() == Qt.MouseButton.LeftButton:
             if self._expanded:
                 self.collapse()
             else:
-                self.card_selected.emit(self)   # let home page collapse others
+                self.card_selected.emit(self)
                 self.expand()
         super().mousePressEvent(event)
 
@@ -238,7 +228,7 @@ class JobCard(QFrame):
         self._action_bar.setVisible(False)
         self._apply_style(selected=False)
 
-    # ── Status / progress updates (called by HomePage) ────────────────────────
+    # ── Status / progress (called by HomePage) ────────────────────────────────
 
     def update_status(self, new_status: JobStatus):
         self.job.status = new_status
@@ -247,6 +237,7 @@ class JobCard(QFrame):
         if new_status == JobStatus.RUNNING:
             self.progress_bar.setVisible(True)
             self.work_item_info.setVisible(True)
+            self.error_label.setVisible(False)
         elif new_status == JobStatus.ERROR:
             self.progress_bar.setVisible(False)
             self.work_item_info.setVisible(False)
@@ -258,28 +249,66 @@ class JobCard(QFrame):
             self.work_item_info.setVisible(False)
             self.error_label.setVisible(False)
 
+    def set_work_item_duration(self, input_file, duration: float):
+        """Store the probed duration for a file so progress can be weighted."""
+        if input_file not in self.work_items:
+            self.work_items[input_file] = {"progress": 0.0, "status": "running", "duration": duration}
+        else:
+            self.work_items[input_file]["duration"] = duration
+
     def update_work_item_progress(self, input_file, progress: float):
         if input_file not in self.work_items:
-            self.work_items[input_file] = {"progress": 0, "status": "pending"}
+            self.work_items[input_file] = {"progress": 0.0, "status": "running"}
+
         self.work_items[input_file]["progress"] = progress
+
+        # Safety net: make sure the progress bar is visible even if the
+        # RUNNING status signal hasn't arrived yet (cross-thread race).
+        if not self.progress_bar.isVisible():
+            self.progress_bar.setVisible(True)
+            self.work_item_info.setVisible(True)
+
         self._update_progress_display()
 
     def update_work_item_status(self, input_file, status):
+        status_str = str(status).upper()
+
+        # Drop completed files immediately so they leave the status text
+        if "DONE" in status_str:
+            self.work_items.pop(input_file, None)
+            self._update_progress_display()
+            return
+
         if input_file not in self.work_items:
-            self.work_items[input_file] = {"progress": 0, "status": status}
+            self.work_items[input_file] = {"progress": 0.0, "status": status}
         else:
             self.work_items[input_file]["status"] = status
+
         self._update_progress_display()
 
-        if str(status).upper() == "ERROR":
+        if "ERROR" in status_str:
             self.error_label.setText(f"Error processing: {input_file.name}")
             self.error_label.setVisible(True)
 
     def _update_progress_display(self):
         if not self.work_items:
             return
-        total = sum(i["progress"] for i in self.work_items.values())
-        self.progress_bar.setValue(int(total / len(self.work_items)))
+
+        # Weighted average: each file contributes proportionally to its duration.
+        # Falls back to equal weighting for any file whose duration isn't known yet.
+        total_duration = sum(i.get("duration", 0.0) for i in self.work_items.values())
+
+        if total_duration > 0:
+            weighted = sum(
+                i["progress"] / 100.0 * i.get("duration", 0.0)
+                for i in self.work_items.values()
+            )
+            avg = (weighted / total_duration) * 100.0
+        else:
+            # Durations not known yet — fall back to simple average
+            avg = sum(i["progress"] for i in self.work_items.values()) / len(self.work_items)
+
+        self.progress_bar.setValue(int(avg))
         lines = [f"{p.name} ({d['progress']:.0f}%)" for p, d in self.work_items.items()]
         self.work_item_info.setText("Processing: " + ", ".join(lines))
 

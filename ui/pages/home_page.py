@@ -24,6 +24,7 @@ class HomePage(QWidget):
 
         # Connect overseer signals
         self.overseer.job_status_changed.connect(self._on_job_status_changed)
+        self.overseer.work_item_duration.connect(self._on_work_item_duration)
         self.overseer.work_item_progress.connect(self._on_work_item_progress)
         self.overseer.work_item_status_changed.connect(self._on_work_item_status_changed)
 
@@ -211,6 +212,11 @@ class HomePage(QWidget):
         card = self._job_cards.get(job_name)
         if card:
             card.update_status(new_status)
+
+    def _on_work_item_duration(self, job_name: str, input_file, duration: float):
+        card = self._job_cards.get(job_name)
+        if card:
+            card.set_work_item_duration(input_file, duration)
 
     def _on_work_item_progress(self, job_name: str, input_file, progress: float):
         card = self._job_cards.get(job_name)
