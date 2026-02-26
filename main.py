@@ -9,6 +9,8 @@ from ui import MainWindow
 def main():
     app = QApplication(sys.argv)
 
+    print("Starting application...")
+
     # Base font
     font = QFont("Segoe UI", 10)
     app.setFont(font)

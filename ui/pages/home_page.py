@@ -1,14 +1,16 @@
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QPushButton, QScrollArea, QFrame, QDialog
+    QPushButton, QScrollArea, QFrame, QDialog,
+    QMessageBox
 )
 from PySide6.QtCore import Qt
 
 from ui.dialogs.add_job import AddJobDialog
 from core.overseer import JobOverseer
+from core.models import TranscodeJob
+from core.config import save_jobs
 from ui.pages._job_card import JobCard
 
-# ── Home page ─────────────────────────────────────────────────────────────────
 
 class HomePage(QWidget):
     """Main job-list page."""
@@ -16,11 +18,11 @@ class HomePage(QWidget):
     def __init__(self, switch_callback, overseer: JobOverseer, parent=None):
         super().__init__(parent)
         self.switch_callback = switch_callback
-        self.overseer = overseer # Store reference to the central overseer
-        self._job_cards = {}     # Map job name -> JobCard widget
-        self._jobs = []          # Store references to created JobCards
+        self.overseer = overseer
+        self._job_cards: dict[str, JobCard] = {}   # job name → card
+        self._selected_card: JobCard | None = None
 
-        # Connect to overseer signals
+        # Connect overseer signals
         self.overseer.job_status_changed.connect(self._on_job_status_changed)
         self.overseer.work_item_progress.connect(self._on_work_item_progress)
         self.overseer.work_item_status_changed.connect(self._on_work_item_status_changed)
@@ -29,7 +31,7 @@ class HomePage(QWidget):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        # ── Page header bar ───────────────────────────────────────────────────
+        # ── Header bar ────────────────────────────────────────────────────────
         header_bar = QWidget()
         header_bar.setFixedHeight(56)
         header_bar.setStyleSheet("background-color: #1e1e1e; border-bottom: 1px solid #333;")
@@ -71,7 +73,7 @@ class HomePage(QWidget):
                 border-radius: 6px;
                 font-size: 14pt;
             }
-            QPushButton:hover  { color: #e0e0e0; border-color: #666; }
+            QPushButton:hover { color: #e0e0e0; border-color: #666; }
         """)
         self.settings_btn.clicked.connect(lambda: switch_callback("settings"))
         header_layout.addWidget(self.settings_btn)
@@ -91,7 +93,6 @@ class HomePage(QWidget):
         canvas_layout.setContentsMargins(0, 16, 0, 16)
         scroll.setWidget(canvas)
 
-        # Centre column at 80 % width
         self._jobs_column = QWidget()
         self._jobs_column.setStyleSheet("background: transparent;")
         self._jobs_layout = QVBoxLayout(self._jobs_column)
@@ -110,57 +111,113 @@ class HomePage(QWidget):
         self._jobs_layout.addStretch()
         self._jobs_layout.addWidget(self._empty_label)
         self._jobs_layout.addStretch()
-    # ── Private helpers ───────────────────────────────────────────────────────
+
+    # ── Public: restore a saved job on startup ────────────────────────────────
+
+    def restore_job(self, job: TranscodeJob) -> None:
+        """
+        Add a card for an already-registered job without opening the dialog.
+        Called by MainWindow during startup for each job loaded from config.
+        """
+        self._hide_empty_state()
+        card = self._create_card(job)
+        self._jobs_layout.addWidget(card)
+
+    # ── Add job via dialog ────────────────────────────────────────────────────
 
     def _add_job(self):
-        """Triggered by the '+ Add Job' button."""
         dialog = AddJobDialog(self)
-
-        # Execute dialog modally
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            # 1. Get the compiled job model
             new_job = dialog.get_transcode_job()
-
-            # 2. Hand it off to the backend overseer
             self.overseer.add_job(new_job)
-
-            # 3. Update the UI
             self._hide_empty_state()
-
-            # Create and add the card
-            card = JobCard(new_job)
+            card = self._create_card(new_job)
             self._jobs_layout.addWidget(card)
-            self._jobs.append(card)
-            self._job_cards[new_job.name] = card
+            self._save_config()
+
+    # ── Card factory ──────────────────────────────────────────────────────────
+
+    def _create_card(self, job: TranscodeJob) -> JobCard:
+        card = JobCard(job)
+        self._job_cards[job.name] = card
+        card.card_selected.connect(self._on_card_selected)
+        card.run_requested.connect(self._on_run_requested)
+        card.stop_requested.connect(self._on_stop_requested)
+        card.delete_requested.connect(self._on_delete_requested)
+        return card
+
+    # ── Empty-state helpers ───────────────────────────────────────────────────
 
     def _hide_empty_state(self):
-        """Helper to clear out the initial placeholder text."""
-        if not self._jobs:
+        if not self._job_cards:
             self._empty_label.hide()
             self._jobs_layout.removeWidget(self._empty_label)
-            # Remove the stretch spacers
             for i in reversed(range(self._jobs_layout.count())):
                 item = self._jobs_layout.itemAt(i)
                 if item and item.spacerItem():
                     self._jobs_layout.removeItem(item)
 
-    # ── Event handlers for overseer signals ────────────────────────────────────
+    def _maybe_show_empty_state(self):
+        if not self._job_cards:
+            self._jobs_layout.addStretch()
+            self._jobs_layout.addWidget(self._empty_label)
+            self._jobs_layout.addStretch()
+            self._empty_label.show()
+
+    # ── Config persistence ────────────────────────────────────────────────────
+
+    def _save_config(self):
+        """Write the current job list to disk."""
+        save_jobs([card.job for card in self._job_cards.values()])
+
+    # ── Card signal handlers ──────────────────────────────────────────────────
+
+    def _on_card_selected(self, clicked_card: JobCard):
+        if self._selected_card and self._selected_card is not clicked_card:
+            self._selected_card.collapse()
+        self._selected_card = clicked_card
+
+    def _on_run_requested(self, job_name: str):
+        self.overseer.scan_now(job_name)
+
+    def _on_stop_requested(self, job_name: str):
+        self.overseer.stop_job(job_name)
+
+    def _on_delete_requested(self, job_name: str):
+        reply = QMessageBox.question(
+            self,
+            "Delete Job",
+            f"Remove job  \"{job_name}\"?\n\nAny active transcodes will be stopped.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        self.overseer.remove_job(job_name)
+
+        card = self._job_cards.pop(job_name, None)
+        if card:
+            if self._selected_card is card:
+                self._selected_card = None
+            self._jobs_layout.removeWidget(card)
+            card.deleteLater()
+
+        self._save_config()
+        self._maybe_show_empty_state()
+
+    # ── Overseer signal handlers ──────────────────────────────────────────────
 
     def _on_job_status_changed(self, job_name: str, new_status):
-        """Triggered when a job's status changes in the overseer."""
-        if job_name in self._job_cards:
-            card = self._job_cards[job_name]
+        card = self._job_cards.get(job_name)
+        if card:
             card.update_status(new_status)
 
     def _on_work_item_progress(self, job_name: str, input_file, progress: float):
-        """Triggered when a work item reports progress."""
-        if job_name in self._job_cards:
-            card = self._job_cards[job_name]
+        card = self._job_cards.get(job_name)
+        if card:
             card.update_work_item_progress(input_file, progress)
 
     def _on_work_item_status_changed(self, job_name: str, input_file, status):
-        """Triggered when a work item's status changes."""
-        if job_name in self._job_cards:
-            card = self._job_cards[job_name]
+        card = self._job_cards.get(job_name)
+        if card:
             card.update_work_item_status(input_file, status)
-

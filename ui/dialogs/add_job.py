@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt
 
 from core.presets import CODEC_PRESETS, AUDIO_PRESETS
-from core.models import CompressionType, TranscodeJob
+from core.models import CompressionType, TranscodeJob, CodecConfig
 
 
 class AddJobDialog(QDialog):

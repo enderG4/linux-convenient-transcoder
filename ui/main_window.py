@@ -5,6 +5,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt
 
 from core import JobOverseer
+from core.config import load_jobs
 from ui.pages import HomePage, SettingsPage
 
 
@@ -75,11 +76,30 @@ class MainWindow(QMainWindow):
         outer.addWidget(self._stack, 4)
         outer.addWidget(self._side_panel, 1)
 
+        # ── Restore persisted jobs ────────────────────────────────────────────
+        self._restore_saved_jobs()
+
+    def _restore_saved_jobs(self) -> None:
+        """
+        Load jobs from the config file and register them with both the
+        overseer and the home page UI.
+
+        Jobs whose folders no longer exist are silently skipped — the user
+        can delete them manually once they notice they're broken.
+        """
+        for job in load_jobs():
+            try:
+                self.overseer.add_job(job)
+                self._home_page.restore_job(job)
+            except Exception:
+                # Duplicate name or other registration error — skip gracefully.
+                pass
+
     # ── Navigation ────────────────────────────────────────────────────────────
 
     def _switch_page(self, page_name: str):
         pages = {
-            "home": self._home_page,
+            "home":     self._home_page,
             "settings": self._settings_page,
         }
         widget = pages.get(page_name)

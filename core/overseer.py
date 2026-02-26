@@ -2,14 +2,6 @@
 core.overseer
 ~~~~~~~~~~~~~
 JobOverseer manages all TranscodeJobs and their recurring timers.
-It is a QObject so the UI can connect to its signals directly.
-
-Signals
--------
-job_status_changed(str, JobStatus)          job name + new status
-work_item_progress(str, Path, float)        job name + file + progress 0-100
-work_item_status_changed(str, Path, object) job name + file + WorkerStatus
-overseer_error(str)                         unrecoverable error message
 """
 
 from __future__ import annotations
@@ -24,35 +16,25 @@ from core.worker import TranscodeWorker
 
 
 class JobOverseer(QObject):
-    """
-    Central controller — create one instance for the whole application.
 
-    Usage:
-        overseer = JobOverseer()
-        overseer.job_status_changed.connect(my_slot)
-        overseer.add_job(my_job)
-        # timers fire automatically; call scan_now(job.name) to trigger manually
-    """
-
-    # ── Signals ───────────────────────────────────────────────────────────────
-    job_status_changed       = Signal(str, object)   # (job_name, JobStatus)
-    work_item_progress       = Signal(str, object, float)   # (job_name, Path, pct)
-    work_item_status_changed = Signal(str, object, object)  # (job_name, Path, WorkerStatus)
+    job_status_changed       = Signal(str, object)
+    work_item_progress       = Signal(str, object, float)
+    work_item_status_changed = Signal(str, object, object)
     overseer_error           = Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._jobs: dict[str, TranscodeJob]        = {}
         self._timers: dict[str, QTimer]            = {}
-        self._workers: dict[Path, TranscodeWorker] = {}  # keyed by input_file
+        self._workers: dict[Path, TranscodeWorker] = {}
 
     # ── Job management ────────────────────────────────────────────────────────
 
     def add_job(self, job: TranscodeJob) -> None:
-        """Register a job and start its recurring timer."""
         if job.name in self._jobs:
             raise ValueError(f"A job named '{job.name}' already exists.")
-
+        print(f"[OVERSEER] add_job: '{job.name}' | interval={job.interval_seconds}s "
+              f"| input='{job.input_folder}' | output='{job.output_folder}'")
         self._jobs[job.name] = job
 
         timer = QTimer(self)
@@ -60,12 +42,20 @@ class JobOverseer(QObject):
         timer.timeout.connect(lambda: self._on_timer(job.name))
         timer.start()
         self._timers[job.name] = timer
+        print(f"[OVERSEER] Timer started for '{job.name}' (fires every {job.interval_seconds}s)")
 
     def remove_job(self, job_name: str) -> None:
-        """Stop and remove a job, cancelling any active workers for it."""
+        print(f"[OVERSEER] remove_job: '{job_name}'")
         self._stop_timer(job_name)
         self._cancel_workers_for_job(job_name)
         self._jobs.pop(job_name, None)
+
+    def stop_job(self, job_name: str) -> None:
+        print(f"[OVERSEER] stop_job: '{job_name}'")
+        self._cancel_workers_for_job(job_name)
+        job = self._jobs.get(job_name)
+        if job:
+            self._set_job_status(job, JobStatus.IDLE)
 
     def get_jobs(self) -> list[TranscodeJob]:
         return list(self._jobs.values())
@@ -74,38 +64,51 @@ class JobOverseer(QObject):
         return self._jobs.get(job_name)
 
     def scan_now(self, job_name: str) -> None:
-        """Trigger an immediate scan outside of the normal timer cycle."""
+        print(f"[OVERSEER] scan_now called for '{job_name}'")
         self._on_timer(job_name)
 
     # ── Timer callback ────────────────────────────────────────────────────────
 
     def _on_timer(self, job_name: str) -> None:
+        print(f"[OVERSEER] _on_timer fired for '{job_name}'")
         job = self._jobs.get(job_name)
         if job is None:
+            print(f"[OVERSEER] _on_timer: job '{job_name}' not found — skipping")
             return
 
-        # Skip if this job is already actively running workers
         if job.status == JobStatus.RUNNING:
+            print(f"[OVERSEER] _on_timer: '{job_name}' is already RUNNING — skipping")
             return
 
         self._set_job_status(job, JobStatus.SCANNING)
+
+        print(f"[OVERSEER] Scanning '{job.input_folder}' for files not yet in "
+              f"'{job.output_folder}' (ext={job.output_extension})")
+        print(f"[OVERSEER] input_folder exists: {job.input_folder.is_dir()}")
+        print(f"[OVERSEER] output_folder exists: {job.output_folder.is_dir()}")
 
         pending = find_pending_files(
             job.input_folder,
             job.output_folder,
             job.output_extension,
         )
+        print(f"[OVERSEER] find_pending_files → {len(pending)} file(s): "
+              f"{[f.name for f in pending]}")
 
-        # Filter out files that already have a live worker
         active_inputs = set(self._workers.keys())
-        pending       = [f for f in pending if f not in active_inputs]
+        before  = len(pending)
+        pending = [f for f in pending if f not in active_inputs]
+        if before - len(pending):
+            print(f"[OVERSEER] Filtered out {before - len(pending)} already-active file(s)")
 
         if not pending:
+            print(f"[OVERSEER] Nothing to do for '{job_name}' — going IDLE")
             self._set_job_status(job, JobStatus.IDLE)
             return
 
         job.pending_files = pending
         self._set_job_status(job, JobStatus.QUEUED)
+        print(f"[OVERSEER] Launching {len(pending)} worker(s) for '{job_name}'")
 
         for input_file in pending:
             self._start_worker(job, input_file)
@@ -116,10 +119,12 @@ class JobOverseer(QObject):
         output_file = build_output_path(
             input_file, job.output_folder, job.output_extension
         )
+        print(f"[OVERSEER] _start_worker: '{input_file.name}' → '{output_file}'")
+        print(f"[OVERSEER] input_file exists: {input_file.exists()}")
+
         item   = WorkItem(input_file=input_file, output_file=output_file, job_name=job.name)
         worker = TranscodeWorker(job, item, parent=self)
 
-        # Wire signals — use default-arg capture to avoid closure-over-loop bugs
         worker.progress_changed.connect(
             lambda pct, f=input_file, n=job.name: self.work_item_progress.emit(n, f, pct)
         )
@@ -132,42 +137,50 @@ class JobOverseer(QObject):
 
         self._workers[input_file] = worker
         self._set_job_status(job, JobStatus.RUNNING)
+        print(f"[OVERSEER] Calling worker.start() for '{input_file.name}'")
         worker.start()
+        print(f"[OVERSEER] worker.start() returned — isRunning={worker.isRunning()}")
 
     def _on_worker_status(self, job_name: str, input_file: Path, status: WorkerStatus) -> None:
+        print(f"[OVERSEER] Worker status: '{input_file.name}' → {status}")
         self.work_item_status_changed.emit(job_name, input_file, status)
 
     def _on_worker_finished(self, job_name: str, input_file: Path) -> None:
+        print(f"[OVERSEER] Worker finished: '{input_file.name}' (job='{job_name}')")
         self._workers.pop(input_file, None)
 
         job = self._jobs.get(job_name)
         if job is None:
+            print(f"[OVERSEER] Job '{job_name}' gone by the time worker finished")
             return
 
-        # If no more workers are active for this job → go back to IDLE
-        active_for_job = [
-            w for f, w in self._workers.items()
-            if self._jobs.get(job_name) and f in (job.pending_files or [])
-        ]
+        active_for_job = [f for f in self._workers if f in (job.pending_files or [])]
+        print(f"[OVERSEER] Workers still active for '{job_name}': {len(active_for_job)}")
         if not active_for_job:
             self._set_job_status(job, JobStatus.IDLE)
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
     def _set_job_status(self, job: TranscodeJob, status: JobStatus) -> None:
+        print(f"[OVERSEER] Status '{job.name}': {job.status.name} → {status.name}")
         job.status = status
         self.job_status_changed.emit(job.name, status)
 
     def _stop_timer(self, job_name: str) -> None:
         timer = self._timers.pop(job_name, None)
         if timer:
+            print(f"[OVERSEER] Stopping timer for '{job_name}'")
             timer.stop()
             timer.deleteLater()
+        else:
+            print(f"[OVERSEER] _stop_timer: no timer for '{job_name}'")
 
     def _cancel_workers_for_job(self, job_name: str) -> None:
         job = self._jobs.get(job_name)
         if job is None:
+            print(f"[OVERSEER] _cancel_workers_for_job: '{job_name}' not found")
             return
-        for input_file in list(self._workers.keys()):
-            if input_file in (job.pending_files or []):
-                self._workers[input_file].cancel()
+        targets = [f for f in self._workers if f in (job.pending_files or [])]
+        print(f"[OVERSEER] Cancelling {len(targets)} worker(s) for '{job_name}'")
+        for f in targets:
+            self._workers[f].cancel()
