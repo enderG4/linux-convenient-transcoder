@@ -44,7 +44,7 @@ class _SidePanel(QWidget):
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(0, 16, 0, 16)
+        root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
         # ── Header ────────────────────────────────────────────────────────────
