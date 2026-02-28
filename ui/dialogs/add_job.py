@@ -49,9 +49,9 @@ class AddJobDialog(QDialog):
         form.addRow("Output Folder:", out_layout)
 
         self.interval_spin = QSpinBox()
-        self.interval_spin.setRange(1, 1440)
-        self.interval_spin.setValue(5)
-        self.interval_spin.setSuffix(" minutes")
+        self.interval_spin.setRange(1, 86400)
+        self.interval_spin.setValue(300)
+        self.interval_spin.setSuffix(" seconds")
         form.addRow("Scan Interval:", self.interval_spin)
 
         form.addRow(QLabel("──────────────────────────────────"))
@@ -130,7 +130,7 @@ class AddJobDialog(QDialog):
         self.name_input.setText(job.name)
         self.in_path_lbl.setText(str(job.input_folder))
         self.out_path_lbl.setText(str(job.output_folder))
-        self.interval_spin.setValue(max(1, job.interval_seconds // 60))
+        self.interval_spin.setValue(max(1, job.interval_seconds))
 
         flags = job.extra_flags  # e.g. ["-c:v", "libx264", "-crf", "23", "-c:a", "aac"]
 
@@ -203,5 +203,5 @@ class AddJobDialog(QDialog):
             output_folder=Path(self.out_path_lbl.text()),
             output_extension=self.format_combo.currentText(),
             extra_flags=extra_flags,
-            interval_seconds=self.interval_spin.value() * 60,
+            interval_seconds=self.interval_spin.value(),
         )

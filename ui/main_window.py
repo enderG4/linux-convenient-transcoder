@@ -1,12 +1,14 @@
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
-    QLabel, QStackedWidget, QSizePolicy
+    QLabel, QStackedWidget, QSizePolicy, QDialog
 )
 from PySide6.QtCore import Qt
 
 from core import JobOverseer
 from core.models import TranscodeJob
 from core.config import load_jobs
+from core.paths import validate_binaries
+from ui.dialogs.binary_setup import BinarySetupDialog
 from ui.pages import HomePage, SettingsPage
 
 
@@ -21,11 +23,11 @@ class _Row(QWidget):
         col.setSpacing(1)
 
         lbl = QLabel(label.upper())
-        lbl.setStyleSheet("color: #555; font-size: 7pt; font-weight: 700; letter-spacing: 1px;")
+        lbl.setStyleSheet("color: #555; font-size: 8pt; font-weight: 700; letter-spacing: 1px;")
         col.addWidget(lbl)
 
         self.value = QLabel("—")
-        self.value.setStyleSheet("color: #cccccc; font-size: 9pt;")
+        self.value.setStyleSheet("color: #cccccc; font-size: 11pt;")
         self.value.setWordWrap(True)
         col.addWidget(self.value)
 
@@ -38,7 +40,7 @@ class _SidePanel(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setStyleSheet("background-color: #1a1a1a; border-left: 1px solid #2e2e2e;")
+        self.setStyleSheet("background-color: #1a1a1a;")
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
 
         root = QVBoxLayout(self)
@@ -123,8 +125,8 @@ class _SidePanel(QWidget):
         audio = flags[flags.index("-c:a") + 1] if "-c:a" in flags else "—"
 
         # Interval in human-readable form
-        mins = job.interval_seconds // 60
-        interval_str = f"{mins} minute{'s' if mins != 1 else ''}"
+        secs = job.interval_seconds
+        interval_str = f"{secs} second{'s' if secs != 1 else ''}"
 
         self._r_name.set(job.name)
         self._r_status.set(job.status.name.capitalize())
@@ -151,12 +153,21 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
 
+        # ── Binary check — must happen before anything else ───────────────────
+        if validate_binaries():
+            dialog = BinarySetupDialog(self)
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                # Download failed — show a simple message and the window will
+                # open anyway; ffmpeg errors will surface when jobs run.
+                pass
+
         self.overseer = JobOverseer()
 
         self.setWindowTitle("Auto-Transcoder")
         self.resize(1000, 620)
         self.setMinimumSize(700, 400)
         self.setStyleSheet("background-color: #121212;")
+        self.setContentsMargins(0, 0, 0, 0)
 
         central = QWidget()
         self.setCentralWidget(central)
@@ -175,7 +186,12 @@ class MainWindow(QMainWindow):
         self._side_panel = _SidePanel()
         self._side_panel.setFixedWidth(280)
 
+        separator = QWidget()
+        separator.setFixedWidth(1)
+        separator.setStyleSheet("background-color: #2e2e2e;")
+
         outer.addWidget(self._stack, 1)
+        outer.addWidget(separator)
         outer.addWidget(self._side_panel)
 
         # ── Wire detail panel signals ─────────────────────────────────────────
