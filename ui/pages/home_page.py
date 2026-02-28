@@ -3,7 +3,7 @@ from PySide6.QtWidgets import (
     QPushButton, QScrollArea, QFrame, QDialog,
     QMessageBox
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 
 from ui.dialogs.add_job import AddJobDialog
 from core.overseer import JobOverseer
@@ -14,6 +14,9 @@ from ui.pages._job_card import JobCard
 
 class HomePage(QWidget):
     """Main job-list page."""
+
+    job_selected   = Signal(object)   # TranscodeJob
+    job_deselected = Signal()
 
     def __init__(self, switch_callback, overseer: JobOverseer, parent=None):
         super().__init__(parent)
@@ -142,6 +145,7 @@ class HomePage(QWidget):
         card = JobCard(job)
         self._job_cards[job.name] = card
         card.card_selected.connect(self._on_card_selected)
+        card.card_deselected.connect(self.job_deselected)
         card.run_requested.connect(self._on_run_requested)
         card.stop_requested.connect(self._on_stop_requested)
         card.edit_requested.connect(self._on_edit_requested)
@@ -176,8 +180,10 @@ class HomePage(QWidget):
 
     def _on_card_selected(self, clicked_card: JobCard):
         if self._selected_card and self._selected_card is not clicked_card:
-            self._selected_card.collapse()
+            self._selected_card.collapse()   # not user-initiated, so no card_deselected
+            self.job_deselected.emit()
         self._selected_card = clicked_card
+        self.job_selected.emit(clicked_card.job)
 
     def _on_run_requested(self, job_name: str):
         self.overseer.scan_now(job_name)
@@ -229,6 +235,7 @@ class HomePage(QWidget):
         if card:
             if self._selected_card is card:
                 self._selected_card = None
+                self.job_deselected.emit()
             self._jobs_layout.removeWidget(card)
             card.deleteLater()
 

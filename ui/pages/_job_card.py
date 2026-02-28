@@ -72,6 +72,7 @@ class JobCard(QFrame):
     """
 
     card_selected    = Signal(object)
+    card_deselected  = Signal()
     run_requested    = Signal(str)
     stop_requested   = Signal(str)
     edit_requested   = Signal(str)
@@ -216,7 +217,7 @@ class JobCard(QFrame):
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             if self._expanded:
-                self.collapse()
+                self.collapse(user_initiated=True)
             else:
                 self.card_selected.emit(self)
                 self.expand()
@@ -227,10 +228,12 @@ class JobCard(QFrame):
         self._action_bar.setVisible(True)
         self._apply_style(selected=True)
 
-    def collapse(self):
+    def collapse(self, user_initiated: bool = False):
         self._expanded = False
         self._action_bar.setVisible(False)
         self._apply_style(selected=False)
+        if user_initiated:
+            self.card_deselected.emit()
 
     # ── Status / progress (called by HomePage) ────────────────────────────────
 
