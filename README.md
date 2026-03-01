@@ -37,7 +37,7 @@ ffmpeg and ffprobe are **not** required — the app will download them automatic
 
 ```bash
 # 1. Clone the repo
-git clone https://github.com/your-username/auto-transcoder.git
+git clone https://github.com/enderG4/convenient-transcoder.git
 cd auto-transcoder
 
 # 2. Create and activate a virtual environment
@@ -66,7 +66,7 @@ and make sure they are executable (`chmod +x bin/ffmpeg bin/ffprobe`).
 
 ```powershell
 # 1. Clone the repo
-git clone https://github.com/your-username/auto-transcoder.git
+git clone https://github.com/enderG4/convenient-transcoder.git
 cd auto-transcoder
 
 # 2. Create and activate a virtual environment
